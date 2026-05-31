@@ -324,6 +324,169 @@ client.on("messageCreate", async (msg) => {
   updateRanking();
 });
 
+/* ================= SPAM EVENT ================= */
+
+let spamGame = {
+  active: false,
+  word: "",
+  counts: {}
+};
+
+client.on("messageCreate", async (msg) => {
+
+  if (msg.author.bot) return;
+
+  if (msg.channel.id !== QUIZ_CHANNEL_ID) return;
+
+  /* ===== ADMIN START ===== */
+
+  if (
+    msg.author.id === ADMIN_ID &&
+    msg.content.startsWith("!mulai ")
+  ) {
+
+    if (spamGame.active) {
+      return msg.reply("❌ Masih ada event berjalan.");
+    }
+
+    const word = msg.content
+      .replace("!mulai ", "")
+      .trim()
+      .toLowerCase();
+
+    if (!word) return;
+
+    spamGame.active = true;
+    spamGame.word = word;
+    spamGame.counts = {};
+
+    await msg.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🎯 WORD SPAM EVENT")
+          .setDescription(`
+📝 Kata:
+
+## ${word.toUpperCase()}
+
+━━━━━━━━━━━━━━━━━━
+
+⏳ Durasi: 5 Menit
+
+🏆 Yang paling banyak mengetik kata ini menang
+
+⭐ Hadiah:
++1 Poin Ranking
+`)
+          .setColor("Green")
+      ]
+    });
+
+    setTimeout(async () => {
+
+      if (!spamGame.active) return;
+
+      const sorted = Object.entries(spamGame.counts)
+        .sort((a, b) => b[1] - a[1]);
+
+      if (sorted.length === 0) {
+
+        spamGame.active = false;
+
+        return msg.channel.send(
+          "❌ Event selesai. Tidak ada peserta."
+        );
+      }
+
+      const winnerId = sorted[0][0];
+      const winnerCount = sorted[0][1];
+
+      const player = getPlayer(winnerId);
+
+      player.points += 1;
+
+      save();
+
+      const result = sorted
+        .slice(0, 10)
+        .map((u, i) => {
+
+          const medal =
+            i === 0 ? "🥇" :
+            i === 1 ? "🥈" :
+            i === 2 ? "🥉" :
+            `${i + 1}.`;
+
+          return `${medal} <@${u[0]}> — ${u[1]}x`;
+        })
+        .join("\n");
+
+      await msg.channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🎉 WORD SPAM SELESAI")
+            .setDescription(`
+📝 Kata:
+**${spamGame.word.toUpperCase()}**
+
+━━━━━━━━━━━━━━━━━━
+
+${result}
+
+━━━━━━━━━━━━━━━━━━
+
+🏆 Pemenang:
+<@${winnerId}>
+
+⭐ +1 Poin Ranking
+`)
+            .setColor("Gold")
+        ]
+      });
+
+      spamGame.active = false;
+      spamGame.word = "";
+      spamGame.counts = {};
+
+      updateRanking();
+
+    }, 300000);
+
+    return;
+  }
+
+  /* ===== ADMIN STOP ===== */
+
+  if (
+    msg.author.id === ADMIN_ID &&
+    msg.content === "!akhir"
+  ) {
+
+    spamGame.active = false;
+    spamGame.word = "";
+    spamGame.counts = {};
+
+    return msg.reply("✅ Event dihentikan.");
+  }
+
+  /* ===== HITUNG SPAM ===== */
+
+  if (!spamGame.active) return;
+
+  if (
+    msg.content.trim().toLowerCase() ===
+    spamGame.word
+  ) {
+
+    if (!spamGame.counts[msg.author.id]) {
+      spamGame.counts[msg.author.id] = 0;
+    }
+
+    spamGame.counts[msg.author.id]++;
+  }
+
+});
+
 /* ================= AUTO QUIZ ================= */
 
 setInterval(async () => {

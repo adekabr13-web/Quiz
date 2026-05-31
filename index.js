@@ -1,7 +1,10 @@
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const fs = require("fs");
@@ -11,6 +14,10 @@ const fs = require("fs");
 const TOKEN = process.env.TOKEN;
 
 const QUIZ_CHANNEL_ID = "1510609642190016582";
+const LEADERBOARD_CHANNEL_ID = "1510621642332831855";
+const SPAM_CHANNEL_ID = "1510621515752804532";
+const CHAT_CHANNEL_ID = "1437072659585175564";
+
 const ADMIN_ID = "1004034354919506011";
 
 /* ================= CLIENT ================= */
@@ -136,7 +143,9 @@ function getPlayer(id) {
 
 async function updateRanking() {
 
-  const channel = await client.channels.fetch(QUIZ_CHANNEL_ID);
+  const channel = await client.channels.fetch(
+  LEADERBOARD_CHANNEL_ID
+);
 
   const players = Object.entries(data.players)
     .sort((a, b) => b[1].points - a[1].points)
@@ -265,9 +274,38 @@ A / B / C / D / E
 `)
     .setColor("Blue");
 
-  const sent = await channel.send({
-    embeds: [embed]
-  });
+  const row = new ActionRowBuilder()
+.addComponents(
+  new ButtonBuilder()
+    .setCustomId("A")
+    .setLabel("A")
+    .setStyle(ButtonStyle.Primary),
+
+  new ButtonBuilder()
+    .setCustomId("B")
+    .setLabel("B")
+    .setStyle(ButtonStyle.Primary),
+
+  new ButtonBuilder()
+    .setCustomId("C")
+    .setLabel("C")
+    .setStyle(ButtonStyle.Primary),
+
+  new ButtonBuilder()
+    .setCustomId("D")
+    .setLabel("D")
+    .setStyle(ButtonStyle.Primary),
+
+  new ButtonBuilder()
+    .setCustomId("E")
+    .setLabel("E")
+    .setStyle(ButtonStyle.Primary)
+);
+
+const sent = await channel.send({
+  embeds: [embed],
+  components: [row]
+});
 
   data.config.quizMessageId = sent.id;
 
@@ -276,31 +314,35 @@ A / B / C / D / E
   updateRanking();
 }
 
-/* ================= ANSWER ================= */
+/* ================= BUTTON ANSWER ================= */
 
-client.on("messageCreate", async (msg) => {
+client.on("interactionCreate", async (i) => {
 
-  if (msg.author.bot) return;
+  if (!i.isButton()) return;
 
-  if (msg.channel.id !== QUIZ_CHANNEL_ID) return;
-
-  const answer = msg.content.toUpperCase();
-
-  if (!["A", "B", "C", "D", "E"].includes(answer)) return;
-
-  if (data.config.currentQuestionId === null) return;
-
-  if (data.config.answeredUsers.includes(msg.author.id)) {
-    return msg.reply("❌ Kamu sudah menjawab.");
+  if (data.config.currentQuestionId === null) {
+    return i.reply({
+      content: "❌ Tidak ada quiz aktif",
+      ephemeral: true
+    });
   }
 
-  data.config.answeredUsers.push(msg.author.id);
+  if (data.config.answeredUsers.includes(i.user.id)) {
+    return i.reply({
+      content: "❌ Kamu sudah menjawab",
+      ephemeral: true
+    });
+  }
+
+  const answer = i.customId;
+
+  data.config.answeredUsers.push(i.user.id);
 
   const q = questions[data.config.currentQuestionId];
 
   if (answer === q.answer) {
 
-    const player = getPlayer(msg.author.id);
+    const player = getPlayer(i.user.id);
 
     let point = 1;
 
@@ -310,18 +352,22 @@ client.on("messageCreate", async (msg) => {
 
     player.points += point;
 
-    data.config.correctUsers.push(msg.author.id);
+    data.config.correctUsers.push(i.user.id);
 
     save();
 
-    await msg.reply(`✅ Jawaban benar! +${point} poin`);
+    updateRanking();
 
-  } else {
-
-    await msg.reply(`❌ Jawaban salah`);
+    return i.reply({
+      content: `✅ Jawaban benar! +${point} poin`,
+      ephemeral: true
+    });
   }
 
-  updateRanking();
+  return i.reply({
+    content: "❌ Jawaban salah",
+    ephemeral: true
+  });
 });
 
 /* ================= SPAM EVENT ================= */
@@ -336,7 +382,12 @@ client.on("messageCreate", async (msg) => {
 
   if (msg.author.bot) return;
 
-  if (msg.channel.id !== QUIZ_CHANNEL_ID) return;
+/* ===== ADMIN START DARI MANA SAJA ===== */
+
+if (
+  msg.author.id === ADMIN_ID &&
+  msg.content.startsWith("!mulai ")
+)
 
   /* ===== ADMIN START ===== */
 
@@ -360,7 +411,12 @@ client.on("messageCreate", async (msg) => {
     spamGame.word = word;
     spamGame.counts = {};
 
-    await msg.channel.send({
+    const spamChannel =
+  await client.channels.fetch(
+    SPAM_CHANNEL_ID
+  );
+
+await spamChannel.send({
       embeds: [
         new EmbedBuilder()
           .setTitle("🎯 WORD SPAM EVENT")
@@ -371,7 +427,7 @@ client.on("messageCreate", async (msg) => {
 
 ━━━━━━━━━━━━━━━━━━
 
-⏳ Durasi: 5 Menit
+⏳ Durasi: 3 Menit
 
 🏆 Yang paling banyak mengetik kata ini menang
 
@@ -393,7 +449,7 @@ client.on("messageCreate", async (msg) => {
 
         spamGame.active = false;
 
-        return msg.channel.send(
+        return spamChannel.send(
           "❌ Event selesai. Tidak ada peserta."
         );
       }
@@ -421,7 +477,7 @@ client.on("messageCreate", async (msg) => {
         })
         .join("\n");
 
-      await msg.channel.send({
+      await spamChannel.send({
         embeds: [
           new EmbedBuilder()
             .setTitle("🎉 WORD SPAM SELESAI")
@@ -450,7 +506,7 @@ ${result}
 
       updateRanking();
 
-    }, 300000);
+    }, 180000);
 
     return;
   }
@@ -472,7 +528,8 @@ ${result}
   /* ===== HITUNG SPAM ===== */
 
   if (!spamGame.active) return;
-
+if (msg.channel.id !== CHAT_CHANNEL_ID)
+  return;
   if (
     msg.content.trim().toLowerCase() ===
     spamGame.word
@@ -566,6 +623,16 @@ client.once("ready", async () => {
   console.log("QUIZ BOT ONLINE 🔥");
 
   updateRanking();
+});
+
+client.on("messageCreate", async (msg) => {
+
+  if (msg.author.id !== ADMIN_ID) return;
+
+  if (msg.content === "!testquiz") {
+    sendQuiz();
+  }
+
 });
 
 client.login(TOKEN);
